@@ -1,0 +1,72 @@
+name: Build Windows Portable Bundle
+
+# Manual trigger: go to the repo's "Actions" tab, pick this workflow, click "Run workflow".
+# Provide a tag name (e.g. v0.1.0). The bundle is uploaded to a GitHub Release under that tag.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g. v0.1.0)'
+        required: true
+        default: 'v0.1.0'
+
+permissions:
+  contents: write   # needed to create the Release and upload assets
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Tesseract-OCR + Vietnamese language pack
+        shell: powershell
+        run: |
+          choco install tesseract -y --no-progress
+          $tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
+          if (-not (Test-Path $tessdata)) { New-Item -ItemType Directory -Force -Path $tessdata | Out-Null }
+          Invoke-WebRequest `
+            -Uri "https://github.com/tesseract-ocr/tessdata/raw/main/vie.traineddata" `
+            -OutFile "$tessdata\vie.traineddata" `
+            -UseBasicParsing
+          & "C:\Program Files\Tesseract-OCR\tesseract.exe" --list-langs
+
+      - name: Build portable bundle
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy Bypass -File build-portable.ps1
+
+      - name: Compress bundle to 7z
+        shell: powershell
+        run: |
+          $src = "dist\docling-app-portable"
+          $out = "dist\docling-app-portable.7z"
+          & "C:\Program Files\7-Zip\7z.exe" a -t7z -mx=7 -mmt=on $out "$src\*"
+          $sizeMB = (Get-Item $out).Length / 1MB
+          Write-Host ("Compressed size: {0:N1} MB" -f $sizeMB)
+          # Fail early if the file exceeds GitHub Release single-asset limit (2 GB)
+          if ($sizeMB -gt 2000) {
+            throw "Bundle exceeds 2GB. Split with -v1900m or reduce dependencies."
+          }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: "Docling Portable Bundle ${{ github.event.inputs.release_tag }}"
+          body: |
+            Bản portable cho Windows x64. Không cần cài Python / Tesseract / Docker.
+
+            **Cách dùng:**
+            1. Tải file `docling-app-portable.7z` bên dưới.
+            2. Giải nén bằng 7-Zip (https://www.7-zip.org/).
+            3. Vào folder giải nén, nhấp đúp `Chay-app.bat`.
+            4. Nếu Windows Firewall hỏi, chọn "Allow access" trên mạng Private/Work.
+            5. Trình duyệt tự mở `http://127.0.0.1:8000`. URL LAN (`http://192.168.x.x:8000`) hiện trong cửa sổ đen — máy khác cùng Wi-Fi vào URL này.
+
+            Build: commit `${{ github.sha }}`.
+          files: dist/docling-app-portable.7z
+          fail_on_unmatched_files: true

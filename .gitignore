@@ -1,0 +1,21 @@
+# Build outputs
+dist/
+build/
+
+# Python venv + caches
+venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Docling model cache (downloaded at build time)
+docling-models/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
