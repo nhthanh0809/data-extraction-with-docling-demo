@@ -115,8 +115,35 @@ if (Test-Path $doclingTools) {
 if ($LASTEXITCODE -ne 0) { throw "docling-tools models download failed" }
 
 # ---- 6. Copy Tesseract ----------------------------------------------------
-Write-Host "[6/6] Copying Tesseract-OCR..." -ForegroundColor Green
+Write-Host "[6/7] Copying Tesseract-OCR..." -ForegroundColor Green
 Copy-Item $TESSERACT_SRC (Join-Path $Out "tesseract") -Recurse
+
+# ---- 7. Bundle Visual C++ runtime DLLs -----------------------------------
+# PyTorch (and other native wheels) depend on the VC++ 2015-2022 runtime.
+# By copying these DLLs next to python.exe we avoid making the customer
+# install "Microsoft Visual C++ Redistributable" on their machine.
+# These DLLs are redistributable per Microsoft's VC++ redist license.
+Write-Host "[7/7] Bundling Visual C++ runtime DLLs..." -ForegroundColor Green
+$vcDlls = @(
+    "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll",
+    "vcruntime140.dll", "vcruntime140_1.dll",
+    "vccorlib140.dll", "concrt140.dll"
+)
+$sys32 = Join-Path $env:SystemRoot "System32"
+$copied = 0
+foreach ($dll in $vcDlls) {
+    $src = Join-Path $sys32 $dll
+    if (Test-Path $src) {
+        Copy-Item $src $pyDir
+        Write-Host "    copied $dll"
+        $copied++
+    } else {
+        Write-Host "    skip $dll (not present on build machine)" -ForegroundColor Yellow
+    }
+}
+if ($copied -eq 0) {
+    throw "No VC++ runtime DLLs found. Install VC++ Redist on this build machine and re-run."
+}
 
 # ---- Write portable launcher ---------------------------------------------
 $launcher = @'
